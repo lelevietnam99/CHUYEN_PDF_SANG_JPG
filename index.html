@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công cụ chuyển PDF sang JPEG (ZIP)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        h2 { color: #333; margin-top: 0; }
+        p { color: #666; font-size: 14px; margin-bottom: 25px; }
+        input[type="file"] {
+            display: block;
+            width: 90%;
+            margin: 0 auto 20px auto;
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button {
+            background-color: #0056b3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #004494; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        #status-box {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+            font-weight: bold;
+        }
+        .status-processing { background-color: #fff3cd; color: #856404; display: block !important; }
+        .status-success { background-color: #d4edda; color: #155724; display: block !important; }
+        .status-error { background-color: #f8d7da; color: #721c24; display: block !important; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Chuyển đổi PDF sang Ảnh (ZIP)</h2>
+        <p>Công cụ chạy hoàn toàn trên trình duyệt, an toàn bảo mật và không lưu trữ dữ liệu lên máy chủ.</p>
+        
+        <input type="file" id="pdf-upload" accept="application/pdf" />
+        <button id="convert-btn" onclick="startConversion()">Bắt đầu xử lý</button>
+        
+        <div id="status-box"></div>
+    </div>
+
+    <script>
+        // Cấu hình Worker cho PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        async function startConversion() {
+            const fileInput = document.getElementById('pdf-upload');
+            const convertBtn = document.getElementById('convert-btn');
+            const statusBox = document.getElementById('status-box');
+
+            if (fileInput.files.length === 0) {
+                alert("Vui lòng chọn một file PDF!");
+                return;
+            }
+
+            const file = fileInput.files[0];
+            
+            // Khóa nút bấm và hiện trạng thái
+            convertBtn.disabled = true;
+            statusBox.className = "status-processing";
+            statusBox.innerText = "Đang khởi tạo, vui lòng đợi...";
+
+            try {
+                // 1. Đọc file PDF từ máy tính lên RAM
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                
+                // 2. Khởi tạo đối tượng tạo file ZIP
+                const zip = new JSZip();
+                
+                // 3. Tạo một thẻ canvas ẩn để vẽ ảnh
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // 4. Lặp qua từng trang của file PDF
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    statusBox.innerText = `Đang xử lý trang ${i} / ${pdf.numPages}...`;
+                    
+                    const page = await pdf.getPage(i);
+                    
+                    // Thiết lập độ phân giải ~300 DPI (72 DPI mặc định x 4.16 = ~300 DPI)
+                    const viewport = page.getViewport({scale: 4.16});
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    // Vẽ nội dung trang PDF lên canvas
+                    await page.render({canvasContext: ctx, viewport: viewport}).promise;
+
+                    // Chuyển canvas thành dữ liệu blob (JPEG chất lượng 95%)
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+
+                    // Đặt tên file theo cấu trúc chuẩn: Serial_Name_Phieu_Trang_X.jpg
+                    const fileName = `Serial_Name_Phieu_Trang_${i}.jpg`;
+                    
+                    // Thêm ảnh vào file ZIP
+                    zip.file(fileName, blob);
+                }
+
+                statusBox.innerText = "Đang nén file ZIP, quá trình này có thể mất vài giây...";
+
+                // 5. Đóng gói thành file ZIP và tải về
+                const zipBlob = await zip.generateAsync({type: 'blob'});
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(zipBlob);
+                
+                // Đặt tên file ZIP tải về dựa trên tên file gốc
+                const originalName = file.name.replace('.pdf', '');
+                downloadLink.download = `${originalName}_Images.zip`;
+                
+                // Tự động click để tải về
+                downloadLink.click();
+
+                // Cập nhật trạng thái thành công
+                statusBox.className = "status-success";
+                statusBox.innerText = "✅ Hoàn tất! File ZIP đã được tải xuống.";
+
+            } catch (error) {
+                console.error(error);
+                statusBox.className = "status-error";
+                statusBox.innerText = "❌ Đã xảy ra lỗi: " + error.message;
+            } finally {
+                // Mở khóa nút bấm
+                convertBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
