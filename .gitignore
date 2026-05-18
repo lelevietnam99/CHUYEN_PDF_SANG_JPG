@@ -1,0 +1,8 @@
+# Bỏ qua file tạm của Python
+__pycache__/
+*.pyc
+
+# Bỏ qua thư mục chứa ảnh phôi (nếu có)
+Phoi_Anh_Xuat_Ra/
+*.jpg
+*.pdf
